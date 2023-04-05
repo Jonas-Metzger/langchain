@@ -210,6 +210,8 @@ class Agent(BaseSingleActionAgent):
 
     llm_chain: LLMChain
     allowed_tools: Optional[List[str]] = None
+    truncate_previous_observations_to: Optional[int] = None
+    max_untruncated_observations: Optional[int] = 1
 
     def get_allowed_tools(self) -> Optional[List[str]]:
         return self.allowed_tools
@@ -238,11 +240,13 @@ class Agent(BaseSingleActionAgent):
     ) -> Union[str, List[BaseMessage]]:
         """Construct the scratchpad that lets the agent continue its thought process."""
         thoughts = ""
-        for action, observation in intermediate_steps:
+        for i, (action, observation) in enumerate(intermediate_steps):
             thoughts += action.log
+            if self.truncate_previous_observations_to and (i < len(intermediate_steps)-self.max_untruncated_observations):
+                observation = observation[:self.truncate_previous_observations_to] + " [TRUNCATED]"
             thoughts += f"\n{self.observation_prefix}{observation}\n{self.llm_prefix}"
         return thoughts
-
+    
     def _get_next_action(self, full_inputs: Dict[str, str]) -> AgentAction:
         full_output = self.llm_chain.predict(**full_inputs)
         parsed_output = self._extract_tool_and_input(full_output)
@@ -260,7 +264,7 @@ class Agent(BaseSingleActionAgent):
         full_output = await self.llm_chain.apredict(**full_inputs)
         parsed_output = self._extract_tool_and_input(full_output)
         while parsed_output is None:
-            full_output = self._fix_text(full_output)
+            #full_output = self._fix_text(full_output)
             full_inputs["agent_scratchpad"] += full_output
             output = await self.llm_chain.apredict(**full_inputs)
             full_output += output
